@@ -53,7 +53,7 @@ export class OtpService {
       );
 
       await client.messages.create({
-        body: `Your CareX verification code is: ${code}. Valid for 10 minutes.`,
+        body: `Your Care Portal verification code is: ${code}. Valid for 10 minutes.`,
         from: this.configService.get('TWILIO_PHONE_NUMBER'),
         to: phone,
       });

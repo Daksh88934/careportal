@@ -31,7 +31,7 @@ export function useOfflineSync() {
     try {
       const pending = await getPendingRegistrations();
       if (pending.length > 0) {
-        const token = localStorage.getItem('carex_token') || '';
+        const token = localStorage.getItem('careportal_token') || '';
         const payload = {
           items: pending.map((p) => ({
             fullName: p.fullName,

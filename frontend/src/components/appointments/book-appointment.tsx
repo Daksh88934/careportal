@@ -188,7 +188,7 @@ export default function BookAppointment({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         amount: paymentData.amount,
         currency: paymentData.currency,
-        name: 'CareX Platform',
+        name: 'Care Portal',
         description: `Consultation with Dr. ${doctor.user.name}`,
         order_id: paymentData.orderId,
         handler: async (response: any) => {

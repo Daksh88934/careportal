@@ -1,4 +1,4 @@
-# CareX
+# Care Portal
 
 A comprehensive telemedicine platform built with modern web technologies, featuring video
 consultations, appointment booking, e-prescriptions, medicine ordering, and integrated payment
@@ -46,7 +46,7 @@ processing.
 
 ```bash
 git clone <repository-url>
-cd CareX
+cd Care Portal
 
 # Run the setup script
 chmod +x scripts/setup.sh
@@ -59,7 +59,7 @@ Update the `.env` file with your actual configuration values:
 
 ```bash
 # Database
-POSTGRES_DB=CareX
+POSTGRES_DB=Care Portal
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your-secure-password
 
@@ -104,7 +104,7 @@ npm run dev:frontend   # Frontend app
 ## 📁 Project Structure
 
 ```
-CareX/
+Care Portal/
 ├── backend/                 # NestJS backend
 │   ├── src/
 │   │   ├── auth/           # Authentication module

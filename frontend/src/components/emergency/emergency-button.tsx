@@ -27,7 +27,7 @@ export function EmergencyButton({ patientId, patientName, vitalsSnapshot, onSucc
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('carex_token') || '';
+      const token = localStorage.getItem('careportal_token') || '';
       const payload = {
         patientId,
         location: 'Field Location (Sub-Centre Ward 4)',

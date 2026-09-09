@@ -1,7 +1,7 @@
 {
   "name": "carex-frontend",
   "version": "1.0.0",
-  "description": "Next.js frontend for CareX platform",
+  "description": "Next.js frontend for Care Portal platform",
   "private": true,
   "scripts": {
     "dev": "next dev",

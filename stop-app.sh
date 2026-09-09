@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# CareX Stop Script
+# Care Portal Stop Script
 # This script stops all running services
 
 # Colors for output
@@ -26,7 +26,7 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-echo "🛑 Stopping CareX"
+echo "🛑 Stopping Care Portal"
 echo "================="
 echo ""
 
@@ -59,5 +59,5 @@ print_status "Cleaning up any remaining processes..."
 pkill -f "npm run start:dev" 2>/dev/null || true
 pkill -f "npm run dev" 2>/dev/null || true
 
-print_success "CareX stopped successfully!"
+print_success "Care Portal stopped successfully!"
 echo ""

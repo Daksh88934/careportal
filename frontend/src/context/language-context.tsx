@@ -19,7 +19,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<Language>('en');
 
   useEffect(() => {
-    const saved = localStorage.getItem('carex_language') as Language;
+    const saved = localStorage.getItem('careportal_language') as Language;
     if (saved === 'en' || saved === 'hi') {
       setLanguageState(saved);
     }
@@ -28,7 +28,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('carex_language', lang);
+      localStorage.setItem('careportal_language', lang);
     }
   };
 

@@ -1,8 +1,8 @@
 {
   "name": "carex-backend",
   "version": "1.0.0",
-  "description": "NestJS backend for CareX platform",
-  "author": "CareX Team",
+  "description": "NestJS backend for Care Portal platform",
+  "author": "Care Portal Team",,
   "private": true,
   "license": "MIT",
   "scripts": {

@@ -68,7 +68,7 @@ export default function PatientRegistrationPage() {
     try {
       if (isOnline) {
         // Direct Server Registration
-        const token = localStorage.getItem('carex_token') || '';
+        const token = localStorage.getItem('careportal_token') || '';
         const res = await axios.post(`${API_BASE}/api/patient-registration`, payload, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });

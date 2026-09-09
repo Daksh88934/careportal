@@ -1,8 +1,8 @@
-# CareX Telemedicine Platform - Setup Guide
+# Care Portal Telemedicine Platform - Setup Guide
 
 ## 🚀 Quick Start
 
-Your CareX telemedicine platform is now fully configured and ready to run! This guide will help you
+Your Care Portal telemedicine platform is now fully configured and ready to run! This guide will help you
 set up and deploy the complete video consultation system.
 
 ## 📋 Prerequisites
@@ -333,7 +333,7 @@ For technical support or questions:
 
 ## 🎉 Success!
 
-Your CareX telemedicine platform is now ready for production use with:
+Your Care Portal telemedicine platform is now ready for production use with:
 
 - ✅ Complete video consultation workflow
 - ✅ Payment integration

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# CareX Startup Script
-# This script starts the complete CareX platform with all services
+# Care Portal Startup Script
+# This script starts the complete Care Portal platform with all services
 
 set -e
 
@@ -155,7 +155,7 @@ setup_database() {
 
 # Start application services
 start_application() {
-    print_status "Starting CareX..."
+    print_status "Starting Care Portal..."
     
     # Create log directory
     mkdir -p logs
@@ -204,7 +204,7 @@ start_application() {
 # Display access information
 show_access_info() {
     echo ""
-    print_success "🚀 CareX is running!"
+    print_success "🚀 Care Portal is running!"
     echo ""
     echo "📱 Frontend Application: http://localhost:3000"
     echo "🔧 Backend API: http://localhost:3001"
@@ -243,7 +243,7 @@ trap cleanup EXIT INT TERM
 
 # Main execution
 main() {
-    echo "🏥 CareX Startup"
+    echo "🏥 Care Portal Startup"
     echo "================================"
     echo ""
     

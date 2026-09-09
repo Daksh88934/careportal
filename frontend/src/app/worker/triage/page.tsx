@@ -122,7 +122,7 @@ export default function DigitalTriagePage() {
   const handleSaveAssessment = async () => {
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('carex_token') || '';
+      const token = localStorage.getItem('careportal_token') || '';
       await axios.post(
         `${API_BASE}/api/triage`,
         {

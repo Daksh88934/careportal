@@ -1,5 +1,5 @@
 @echo off
-echo Starting CareX...
+echo Starting Care Portal...
 echo.
 
 REM Check if Node.js is installed
@@ -68,7 +68,7 @@ cd ..
 
 REM Start the application
 echo.
-echo Starting CareX...
+echo Starting Care Portal...
 echo.
 echo Frontend will be available at: http://localhost:3000
 echo Backend API will be available at: http://localhost:3001
@@ -82,7 +82,7 @@ timeout /t 5 /nobreak >nul
 start "Frontend" cmd /k "cd frontend && npm run dev"
 
 echo.
-echo CareX is starting...
+echo Care Portal is starting...
 echo Check the opened terminal windows for logs.
 echo Press any key to exit this script (services will continue running)
 pause >nul

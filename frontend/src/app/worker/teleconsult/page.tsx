@@ -75,7 +75,7 @@ export default function AssistedTeleconsultPage() {
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('carex_token') || '';
+      const token = localStorage.getItem('careportal_token') || '';
       const payload = {
         patientId,
         chiefComplaint,

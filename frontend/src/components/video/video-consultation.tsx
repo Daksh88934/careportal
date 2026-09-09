@@ -200,9 +200,9 @@ export default function VideoConsultation({
           SHOW_POWERED_BY: false,
           DISPLAY_WELCOME_PAGE_CONTENT: false,
           DISPLAY_WELCOME_PAGE_TOOLBAR_ADDITIONAL_CONTENT: false,
-          APP_NAME: 'CareX Video Consultation',
-          NATIVE_APP_NAME: 'CareX',
-          PROVIDER_NAME: 'CareX Platform',
+          APP_NAME: 'Care Portal Video Consultation',
+          NATIVE_APP_NAME: 'Care Portal',
+          PROVIDER_NAME: 'Care Portal',
         },
         userInfo: {
           displayName:
