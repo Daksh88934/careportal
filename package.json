@@ -1,5 +1,5 @@
 {
-  "name": "carex",
+  "name": "careportal",
   "version": "1.0.0",
   "description": "Full-stack TypeScript telemedicine platform with video consultations, e-prescriptions, and medicine ordering",
   "private": true,
