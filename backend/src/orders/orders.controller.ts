@@ -4,7 +4,6 @@ import {
   Post,
   Put,
   Patch,
-  Delete,
   Body,
   Param,
   Query,
@@ -32,26 +31,31 @@ export class OrdersController {
   @Post()
   @Roles('PATIENT', 'ADMIN')
   async createOrder(@Body() createOrderDto: CreateOrderDto, @Request() req) {
+    if (req.user.role === 'PATIENT') {
+      const patient = await this.ordersService['prisma'].patient.findFirst({
+        where: { userId: req.user.id },
+      });
+      if (!patient || patient.id !== createOrderDto.patientId) {
+        throw new BadRequestException(
+          'Can only create orders for your own patient profile'
+        );
+      }
+    }
     return this.ordersService.createOrder(createOrderDto);
   }
 
-  @Post('from-prescription/:prescriptionId')
+  @Post('prescription/:prescriptionId')
   @Roles('PATIENT', 'ADMIN')
   async createOrderFromPrescription(
     @Param('prescriptionId', ParseUUIDPipe) prescriptionId: string,
-    @Body()
-    body: {
-      pharmacyId: string;
-      deliveryAddress: string;
-      deliveryType: 'PICKUP' | 'DELIVERY';
-    },
+    @Body() body: { pharmacyId: string; deliveryAddress: string; deliveryType?: 'PICKUP' | 'DELIVERY' },
     @Request() req
   ) {
     return this.ordersService.createOrderFromPrescription(
       prescriptionId,
       body.pharmacyId,
       body.deliveryAddress,
-      body.deliveryType
+      body.deliveryType || 'DELIVERY'
     );
   }
 
@@ -78,11 +82,11 @@ export class OrdersController {
   @Roles('PHARMACY', 'ADMIN')
   async getOrdersByPharmacy(
     @Param('pharmacyId', ParseUUIDPipe) pharmacyId: string,
+    @Request() req,
     @Query('status') status?: OrderStatus,
     @Query('deliveryType') deliveryType?: 'PICKUP' | 'DELIVERY',
     @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Request() req
+    @Query('endDate') endDate?: string
   ) {
     const filters: OrderSearchFilters = {};
 
@@ -103,10 +107,25 @@ export class OrdersController {
   @Roles('PHARMACY', 'ADMIN')
   async getOrdersByStatus(
     @Param('status') status: OrderStatus,
-    @Query('pharmacyId') pharmacyId?: string,
-    @Request() req
+    @Request() req,
+    @Query('pharmacyId') pharmacyId?: string
   ) {
-    return this.ordersService.getOrdersByStatus(status, pharmacyId);
+    let targetPharmacyId = pharmacyId;
+    if (req.user.role === 'PHARMACY') {
+      const pharmacy = await this.ordersService['prisma'].pharmacy.findFirst({
+        where: { userId: req.user.id },
+      });
+      if (pharmacy) {
+        targetPharmacyId = pharmacy.id;
+      }
+    }
+
+    return this.ordersService.getOrdersByPharmacy(
+      targetPharmacyId || '',
+      req.user.id,
+      req.user.role,
+      { status }
+    );
   }
 
   @Put(':id')
@@ -126,19 +145,28 @@ export class OrdersController {
 
   @Patch(':id/confirm')
   @Roles('PHARMACY', 'ADMIN')
-  async confirmOrder(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+  async confirmOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req
+  ) {
     return this.ordersService.confirmOrder(id, req.user.id, req.user.role);
   }
 
   @Patch(':id/prepare')
   @Roles('PHARMACY', 'ADMIN')
-  async prepareOrder(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+  async prepareOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req
+  ) {
     return this.ordersService.prepareOrder(id, req.user.id, req.user.role);
   }
 
   @Patch(':id/ready')
   @Roles('PHARMACY', 'ADMIN')
-  async readyForPickup(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+  async readyForPickup(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req
+  ) {
     return this.ordersService.readyForPickup(id, req.user.id, req.user.role);
   }
 
@@ -147,7 +175,7 @@ export class OrdersController {
   async dispatchOrder(
     @Param('id', ParseUUIDPipe) id: string,
     @Body()
-    body: {
+    data: {
       deliveryPersonName?: string;
       deliveryPersonPhone?: string;
       trackingNumber?: string;
@@ -156,7 +184,7 @@ export class OrdersController {
   ) {
     return this.ordersService.dispatchOrder(
       id,
-      body,
+      data,
       req.user.id,
       req.user.role
     );
@@ -164,7 +192,10 @@ export class OrdersController {
 
   @Patch(':id/deliver')
   @Roles('PHARMACY', 'ADMIN')
-  async deliverOrder(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
+  async deliverOrder(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req
+  ) {
     return this.ordersService.deliverOrder(id, req.user.id, req.user.role);
   }
 
@@ -194,9 +225,9 @@ export class OrdersController {
     @Request() req
   ) {
     const estimatedDeliveryTime = new Date(body.estimatedDeliveryTime);
-    return this.ordersService.updateOrderEstimatedDelivery(
+    return this.ordersService.updateOrder(
       id,
-      estimatedDeliveryTime,
+      { estimatedDelivery: estimatedDeliveryTime },
       req.user.id,
       req.user.role
     );
@@ -205,115 +236,73 @@ export class OrdersController {
   @Get('stats/overview')
   @Roles('PHARMACY', 'ADMIN')
   async getOrderStats(
-    @Query('pharmacyId') pharmacyId?: string,
-    @Request() req
+    @Request() req,
+    @Query('pharmacyId') pharmacyId?: string
   ) {
-    // If user is pharmacy role, restrict to their pharmacy only
+    let targetPharmacyId = pharmacyId;
     if (req.user.role === 'PHARMACY') {
       const pharmacy = await this.ordersService['prisma'].pharmacy.findFirst({
         where: { userId: req.user.id },
       });
       if (pharmacy) {
-        pharmacyId = pharmacy.id;
+        targetPharmacyId = pharmacy.id;
       }
     }
 
-    return this.ordersService.getOrderStats(pharmacyId);
+    return this.ordersService.getOrderStats(targetPharmacyId);
   }
 
   @Get('recent/list')
   @Roles('PHARMACY', 'ADMIN')
   async getRecentOrders(
+    @Request() req,
     @Query('limit') limit?: string,
-    @Query('pharmacyId') pharmacyId?: string,
-    @Request() req
+    @Query('pharmacyId') pharmacyId?: string
   ) {
-    // If user is pharmacy role, restrict to their pharmacy only
+    let targetPharmacyId = pharmacyId;
     if (req.user.role === 'PHARMACY') {
       const pharmacy = await this.ordersService['prisma'].pharmacy.findFirst({
         where: { userId: req.user.id },
       });
       if (pharmacy) {
-        pharmacyId = pharmacy.id;
+        targetPharmacyId = pharmacy.id;
       }
     }
 
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.ordersService.getRecentOrders(limitNum, pharmacyId);
+    return this.ordersService.getRecentOrders(limitNum, targetPharmacyId);
   }
 
   @Get('date-range/search')
   @Roles('PHARMACY', 'ADMIN')
   async getOrdersByDateRange(
+    @Request() req,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
-    @Query('pharmacyId') pharmacyId?: string,
-    @Request() req
+    @Query('pharmacyId') pharmacyId?: string
   ) {
     if (!startDate || !endDate) {
       throw new BadRequestException('Start date and end date are required');
     }
 
-    // If user is pharmacy role, restrict to their pharmacy only
+    let targetPharmacyId = pharmacyId;
     if (req.user.role === 'PHARMACY') {
       const pharmacy = await this.ordersService['prisma'].pharmacy.findFirst({
         where: { userId: req.user.id },
       });
       if (pharmacy) {
-        pharmacyId = pharmacy.id;
+        targetPharmacyId = pharmacy.id;
       }
     }
 
-    return this.ordersService.getOrdersByDateRange(
-      new Date(startDate),
-      new Date(endDate),
-      pharmacyId
+    return this.ordersService.getOrdersByPharmacy(
+      targetPharmacyId || '',
+      req.user.id,
+      req.user.role,
+      {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      }
     );
   }
-}
-
-// Additional DTOs for validation
-export class CreateOrderItemDto {
-  medicineId: string;
-  quantity: number;
-  prescribedQuantity?: number;
-}
-
-export class CreateOrderRequestDto {
-  prescriptionId?: string;
-  patientId: string;
-  pharmacyId: string;
-  items: CreateOrderItemDto[];
-  deliveryAddress: string;
-  deliveryType: 'PICKUP' | 'DELIVERY';
-  notes?: string;
-}
-
-export class UpdateOrderRequestDto {
-  status?: OrderStatus;
-  pharmacyNotes?: string;
-  estimatedDeliveryTime?: Date;
-  trackingNumber?: string;
-  deliveryPersonName?: string;
-  deliveryPersonPhone?: string;
-}
-
-export class DispatchOrderDto {
-  deliveryPersonName?: string;
-  deliveryPersonPhone?: string;
-  trackingNumber?: string;
-}
-
-export class CancelOrderDto {
-  reason: string;
-}
-
-export class UpdateEstimatedDeliveryDto {
-  estimatedDeliveryTime: string;
-}
-
-export class CreateOrderFromPrescriptionDto {
-  pharmacyId: string;
-  deliveryAddress: string;
-  deliveryType: 'PICKUP' | 'DELIVERY';
 }

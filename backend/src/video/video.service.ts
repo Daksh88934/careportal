@@ -145,15 +145,44 @@ export class VideoService {
 
     return jwt.sign(payload, 'fallback-secret', {
       algorithm: 'HS256',
-      header: { kid: jitsiKid },
+      header: { kid: jitsiKid, alg: 'HS256' } as any,
     });
+  }
+
+  async getRoomParticipants(roomId: string) {
+    const appointment = await this.prisma.appointment.findFirst({
+      where: { videoRoomId: roomId },
+      include: {
+        patient: { include: { user: true } },
+        doctor: { include: { user: true } },
+      },
+    });
+
+    if (!appointment) return [];
+
+    return [
+      {
+        id: appointment.doctor.user.id,
+        name: appointment.doctor.user.name,
+        role: 'DOCTOR',
+      },
+      {
+        id: appointment.patient.user.id,
+        name: appointment.patient.user.name,
+        role: 'PATIENT',
+      },
+    ];
   }
 
   async joinVideoRoom(appointmentId: string, userId: string) {
     const appointment = await this.prisma.appointment.findFirst({
       where: {
-        id: appointmentId,
-        OR: [{ patientId: userId }, { doctorId: userId }],
+        OR: [
+          { id: appointmentId, patient: { userId } },
+          { id: appointmentId, doctor: { userId } },
+          { videoRoomId: appointmentId, patient: { userId } },
+          { videoRoomId: appointmentId, doctor: { userId } },
+        ],
       },
       include: {
         patient: { include: { user: true } },
@@ -177,15 +206,18 @@ export class VideoService {
     return {
       roomId: appointment.videoRoomId,
       jitsiLink,
-      userRole: appointment.patientId === userId ? 'patient' : 'doctor',
+      userRole: appointment.patient.userId === userId ? 'patient' : 'doctor',
+      iceServers: this.getIceServers(),
     };
   }
 
   async endVideoCall(appointmentId: string, userId: string) {
     const appointment = await this.prisma.appointment.findFirst({
       where: {
-        id: appointmentId,
-        doctorId: userId, // Only doctor can end the call
+        OR: [
+          { id: appointmentId, doctor: { userId } },
+          { videoRoomId: appointmentId, doctor: { userId } },
+        ],
       },
     });
 
@@ -195,7 +227,7 @@ export class VideoService {
 
     // Update appointment status to completed
     await this.prisma.appointment.update({
-      where: { id: appointmentId },
+      where: { id: appointment.id },
       data: {
         status: 'COMPLETED',
         updatedAt: new Date(),
@@ -204,15 +236,19 @@ export class VideoService {
 
     return {
       message: 'Video call ended successfully',
-      appointmentId,
+      appointmentId: appointment.id,
     };
   }
 
   async getVideoRoomDetails(appointmentId: string, userId: string) {
     const appointment = await this.prisma.appointment.findFirst({
       where: {
-        id: appointmentId,
-        OR: [{ patientId: userId }, { doctorId: userId }],
+        OR: [
+          { id: appointmentId, patient: { userId } },
+          { id: appointmentId, doctor: { userId } },
+          { videoRoomId: appointmentId, patient: { userId } },
+          { videoRoomId: appointmentId, doctor: { userId } },
+        ],
       },
       include: {
         patient: { include: { user: true } },

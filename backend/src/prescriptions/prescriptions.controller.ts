@@ -341,9 +341,6 @@ export class PrescriptionsController {
     ].prescription.findFirst({
       where: { appointmentId },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },

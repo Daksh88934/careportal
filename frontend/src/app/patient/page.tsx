@@ -47,6 +47,7 @@ const mockAppointments = [
     time: '10:00 AM',
     type: 'Video Consultation',
     status: 'CONFIRMED',
+    doctorAvatar: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=200',
   },
   {
     id: '2',
@@ -56,6 +57,7 @@ const mockAppointments = [
     time: '2:30 PM',
     type: 'In-Person',
     status: 'PENDING',
+    doctorAvatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&q=80&w=200',
   },
 ]
 
@@ -177,6 +179,7 @@ export default function PatientDashboard() {
                 >
                   <div className="flex items-center space-x-4">
                     <Avatar>
+                      <AvatarImage src={appointment.doctorAvatar} alt={appointment.doctorName} />
                       <AvatarFallback>
                         {appointment.doctorName.split(' ').map(n => n[0]).join('')}
                       </AvatarFallback>

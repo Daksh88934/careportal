@@ -14,7 +14,7 @@ export interface CreateOrderDto {
   pharmacyId: string;
   items: OrderItemDto[];
   deliveryAddress: string;
-  deliveryType: 'PICKUP' | 'DELIVERY';
+  deliveryType?: 'PICKUP' | 'DELIVERY';
   notes?: string;
 }
 
@@ -26,7 +26,9 @@ export interface OrderItemDto {
 
 export interface UpdateOrderDto {
   status?: OrderStatus;
+  notes?: string;
   pharmacyNotes?: string;
+  estimatedDelivery?: Date;
   estimatedDeliveryTime?: Date;
   trackingNumber?: string;
   deliveryPersonName?: string;
@@ -75,16 +77,9 @@ export class OrdersService {
     }
 
     // If prescription-based order, validate prescription
-    let prescription = null;
     if (data.prescriptionId) {
-      prescription = await this.prisma.prescription.findUnique({
+      const prescription = await this.prisma.prescription.findUnique({
         where: { id: data.prescriptionId },
-        include: {
-          prescriptionMedicines: {
-            include: { medicine: true },
-          },
-          patient: true,
-        },
       });
 
       if (!prescription) {
@@ -96,20 +91,6 @@ export class OrdersService {
           'Prescription does not belong to this patient'
         );
       }
-
-      // Validate that ordered medicines match prescription
-      const prescribedMedicineIds = prescription.prescriptionMedicines.map(
-        pm => pm.medicineId
-      );
-      const orderedMedicineIds = data.items.map(item => item.medicineId);
-
-      for (const medicineId of orderedMedicineIds) {
-        if (!prescribedMedicineIds.includes(medicineId)) {
-          throw new BadRequestException(
-            `Medicine ${medicineId} is not in the prescription`
-          );
-        }
-      }
     }
 
     // Validate medicines exist and are available
@@ -117,13 +98,17 @@ export class OrdersService {
     const validatedItems = [];
 
     for (const item of data.items) {
-      const medicine = await this.medicinesService.getMedicineById(
-        item.medicineId
-      );
+      const medicine = await this.prisma.medicine.findUnique({
+        where: { id: item.medicineId },
+      });
 
-      if (!medicine.isAvailable) {
+      if (!medicine) {
+        throw new NotFoundException(`Medicine ${item.medicineId} not found`);
+      }
+
+      if (!medicine.isActive || (medicine.stock !== undefined && medicine.stock <= 0)) {
         throw new BadRequestException(
-          `Medicine ${medicine.name} is not available`
+          `Medicine ${medicine.name} is currently out of stock`
         );
       }
 
@@ -134,14 +119,14 @@ export class OrdersService {
         );
       }
 
-      const itemTotal = medicine.price * item.quantity;
+      const price = Number(medicine.unitPrice);
+      const itemTotal = price * item.quantity;
       totalAmount += itemTotal;
 
       validatedItems.push({
         medicineId: item.medicineId,
         quantity: item.quantity,
-        prescribedQuantity: item.prescribedQuantity,
-        unitPrice: medicine.price,
+        unitPrice: price,
         totalPrice: itemTotal,
       });
     }
@@ -149,13 +134,11 @@ export class OrdersService {
     // Create order with items
     const order = await this.prisma.order.create({
       data: {
-        prescriptionId: data.prescriptionId,
         patientId: data.patientId,
         pharmacyId: data.pharmacyId,
         totalAmount,
         deliveryAddress: data.deliveryAddress,
-        deliveryType: data.deliveryType,
-        status: 'PENDING',
+        status: 'PLACED',
         notes: data.notes,
         orderItems: {
           create: validatedItems,
@@ -171,7 +154,7 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
-        prescription: true,
+        payments: true,
       },
     });
 
@@ -191,14 +174,7 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
-        prescription: {
-          include: {
-            prescriptionMedicines: {
-              include: { medicine: true },
-            },
-          },
-        },
-        payment: true,
+        payments: true,
       },
     });
 
@@ -244,7 +220,7 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
-        payment: true,
+        payments: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -274,9 +250,6 @@ export class OrdersService {
       if (filters.status) {
         where.status = filters.status;
       }
-      if (filters.deliveryType) {
-        where.deliveryType = filters.deliveryType;
-      }
       if (filters.startDate || filters.endDate) {
         where.createdAt = {};
         if (filters.startDate) {
@@ -297,7 +270,7 @@ export class OrdersService {
         patient: {
           include: { user: true },
         },
-        payment: true,
+        payments: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -332,9 +305,23 @@ export class OrdersService {
       throw new ForbiddenException('Access denied');
     }
 
+    const updateData: any = {};
+    if (data.status) updateData.status = data.status;
+    if (data.notes || data.pharmacyNotes) updateData.notes = data.notes || data.pharmacyNotes;
+    if (data.estimatedDelivery || data.estimatedDeliveryTime) {
+      updateData.estimatedDelivery = data.estimatedDelivery || data.estimatedDeliveryTime;
+    }
+    if (data.trackingNumber || data.deliveryPersonName || data.deliveryPersonPhone) {
+      updateData.trackingInfo = {
+        trackingNumber: data.trackingNumber,
+        deliveryPersonName: data.deliveryPersonName,
+        deliveryPersonPhone: data.deliveryPersonPhone,
+      };
+    }
+
     return this.prisma.order.update({
       where: { id },
-      data,
+      data: updateData,
       include: {
         orderItems: {
           include: { medicine: true },
@@ -345,23 +332,23 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
-        payment: true,
+        payments: true,
       },
     });
   }
 
   async confirmOrder(id: string, userId: string, userRole: string) {
-    return this.updateOrder(id, { status: 'CONFIRMED' }, userId, userRole);
+    return this.updateOrder(id, { status: 'PROCESSING' }, userId, userRole);
   }
 
   async prepareOrder(id: string, userId: string, userRole: string) {
-    return this.updateOrder(id, { status: 'PREPARING' }, userId, userRole);
+    return this.updateOrder(id, { status: 'PROCESSING' }, userId, userRole);
   }
 
   async readyForPickup(id: string, userId: string, userRole: string) {
     return this.updateOrder(
       id,
-      { status: 'READY_FOR_PICKUP' },
+      { status: 'PROCESSING' },
       userId,
       userRole
     );
@@ -380,7 +367,7 @@ export class OrdersService {
     return this.updateOrder(
       id,
       {
-        status: 'DISPATCHED',
+        status: 'SHIPPED',
         deliveryPersonName: data.deliveryPersonName,
         deliveryPersonPhone: data.deliveryPersonPhone,
         trackingNumber: data.trackingNumber,
@@ -419,7 +406,7 @@ export class OrdersService {
     }
 
     // Only allow cancellation if order is not yet dispatched
-    if (['DISPATCHED', 'DELIVERED'].includes(order.status)) {
+    if (['SHIPPED', 'DELIVERED'].includes(order.status)) {
       throw new BadRequestException(
         'Cannot cancel order that has been dispatched or delivered'
       );
@@ -429,7 +416,7 @@ export class OrdersService {
       where: { id },
       data: {
         status: 'CANCELLED',
-        pharmacyNotes: reason,
+        notes: reason,
       },
       include: {
         orderItems: {
@@ -441,6 +428,7 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
+        payments: true,
       },
     });
   }
@@ -450,18 +438,16 @@ export class OrdersService {
 
     const [
       total,
-      pending,
-      confirmed,
-      preparing,
-      dispatched,
+      placed,
+      processing,
+      shipped,
       delivered,
       cancelled,
     ] = await Promise.all([
       this.prisma.order.count({ where }),
-      this.prisma.order.count({ where: { ...where, status: 'PENDING' } }),
-      this.prisma.order.count({ where: { ...where, status: 'CONFIRMED' } }),
-      this.prisma.order.count({ where: { ...where, status: 'PREPARING' } }),
-      this.prisma.order.count({ where: { ...where, status: 'DISPATCHED' } }),
+      this.prisma.order.count({ where: { ...where, status: 'PLACED' } }),
+      this.prisma.order.count({ where: { ...where, status: 'PROCESSING' } }),
+      this.prisma.order.count({ where: { ...where, status: 'SHIPPED' } }),
       this.prisma.order.count({ where: { ...where, status: 'DELIVERED' } }),
       this.prisma.order.count({ where: { ...where, status: 'CANCELLED' } }),
     ]);
@@ -473,10 +459,9 @@ export class OrdersService {
 
     return {
       total,
-      pending,
-      confirmed,
-      preparing,
-      dispatched,
+      placed,
+      processing,
+      shipped,
       delivered,
       cancelled,
       totalRevenue: totalRevenue._sum.totalAmount || 0,
@@ -498,6 +483,7 @@ export class OrdersService {
         pharmacy: {
           include: { user: true },
         },
+        payments: true,
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -508,14 +494,11 @@ export class OrdersService {
     prescriptionId: string,
     pharmacyId: string,
     deliveryAddress: string,
-    deliveryType: 'PICKUP' | 'DELIVERY'
+    deliveryType: 'PICKUP' | 'DELIVERY' = 'DELIVERY'
   ) {
     const prescription = await this.prisma.prescription.findUnique({
       where: { id: prescriptionId },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         patient: true,
       },
     });
@@ -524,13 +507,13 @@ export class OrdersService {
       throw new NotFoundException('Prescription not found');
     }
 
-    const orderItems: OrderItemDto[] = prescription.prescriptionMedicines.map(
-      pm => ({
-        medicineId: pm.medicineId,
-        quantity: 1, // Default quantity, can be adjusted
-        prescribedQuantity: 1,
-      })
-    );
+    const content = (prescription.content as any) || {};
+    const medicines = Array.isArray(content.medicines) ? content.medicines : [];
+    const orderItems: OrderItemDto[] = medicines.map((m: any) => ({
+      medicineId: m.medicineId || m.id,
+      quantity: m.quantity || 1,
+      prescribedQuantity: m.quantity || 1,
+    })).filter((item: any) => !!item.medicineId);
 
     return this.createOrder({
       prescriptionId,
@@ -539,72 +522,6 @@ export class OrdersService {
       items: orderItems,
       deliveryAddress,
       deliveryType,
-      notes: `Order created from prescription ${prescriptionId}`,
-    });
-  }
-
-  async getOrdersByStatus(status: OrderStatus, pharmacyId?: string) {
-    const where: any = { status };
-    if (pharmacyId) {
-      where.pharmacyId = pharmacyId;
-    }
-
-    return this.prisma.order.findMany({
-      where,
-      include: {
-        orderItems: {
-          include: { medicine: true },
-        },
-        patient: {
-          include: { user: true },
-        },
-        pharmacy: {
-          include: { user: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  async updateOrderEstimatedDelivery(
-    id: string,
-    estimatedDeliveryTime: Date,
-    userId: string,
-    userRole: string
-  ) {
-    return this.updateOrder(id, { estimatedDeliveryTime }, userId, userRole);
-  }
-
-  async getOrdersByDateRange(
-    startDate: Date,
-    endDate: Date,
-    pharmacyId?: string
-  ) {
-    const where: any = {
-      createdAt: {
-        gte: startDate,
-        lte: endDate,
-      },
-    };
-
-    if (pharmacyId) {
-      where.pharmacyId = pharmacyId;
-    }
-
-    return this.prisma.order.findMany({
-      where,
-      include: {
-        orderItems: {
-          include: { medicine: true },
-        },
-        patient: {
-          include: { user: true },
-        },
-        pharmacy: {
-          include: { user: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
     });
   }
 }

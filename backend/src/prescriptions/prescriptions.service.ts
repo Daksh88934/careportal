@@ -51,7 +51,7 @@ export class PrescriptionsService {
       include: {
         doctor: { include: { user: true } },
         patient: { include: { user: true } },
-        prescription: true,
+        prescriptions: true,
       },
     });
 
@@ -74,7 +74,7 @@ export class PrescriptionsService {
       );
     }
 
-    if (appointment.prescription) {
+    if (appointment.prescriptions && appointment.prescriptions.length > 0) {
       throw new BadRequestException(
         'Prescription already exists for this appointment'
       );
@@ -95,31 +95,31 @@ export class PrescriptionsService {
       throw new BadRequestException('One or more medicines not found');
     }
 
-    // Create prescription with medicines
+    // Map medicines to get full details for JSON
+    const detailedMedicines = data.medicines.map(m => {
+      const medInfo = medicines.find(med => med.id === m.medicineId);
+      return {
+        ...m,
+        name: medInfo?.name,
+      };
+    });
+
+    // Create prescription with JSON content
     const prescription = await this.prisma.prescription.create({
       data: {
         appointmentId: data.appointmentId,
         patientId: data.patientId,
         doctorId,
-        diagnosis: data.diagnosis,
-        symptoms: data.symptoms,
-        instructions: data.instructions,
-        followUpDate: data.followUpDate,
         notes: data.notes,
-        prescriptionMedicines: {
-          create: data.medicines.map(med => ({
-            medicineId: med.medicineId,
-            dosage: med.dosage,
-            frequency: med.frequency,
-            duration: med.duration,
-            instructions: med.instructions,
-          })),
+        content: {
+          diagnosis: data.diagnosis,
+          symptoms: data.symptoms,
+          instructions: data.instructions,
+          followUpDate: data.followUpDate,
+          medicines: detailedMedicines,
         },
       },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -133,16 +133,13 @@ export class PrescriptionsService {
     const pdfBuffer =
       await this.pdfService.generatePrescriptionPdf(prescription);
 
-    // Update prescription with PDF URL (would upload to cloud storage in production)
+    // Update prescription with PDF URL
     const pdfUrl = await this.uploadPdfToStorage(pdfBuffer, prescription.id);
 
     const updatedPrescription = await this.prisma.prescription.update({
       where: { id: prescription.id },
       data: { pdfUrl },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -159,9 +156,6 @@ export class PrescriptionsService {
     const prescription = await this.prisma.prescription.findUnique({
       where: { id },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -207,9 +201,6 @@ export class PrescriptionsService {
     return this.prisma.prescription.findMany({
       where: { patientId },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -240,9 +231,6 @@ export class PrescriptionsService {
     return this.prisma.prescription.findMany({
       where: { doctorId },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             patient: { include: { user: true } },
@@ -273,6 +261,8 @@ export class PrescriptionsService {
       );
     }
 
+    let updatedMedicines = undefined;
+
     // If medicines are being updated, validate them
     if (data.medicines) {
       const medicineIds = data.medicines.map(m => m.medicineId);
@@ -284,36 +274,33 @@ export class PrescriptionsService {
         throw new BadRequestException('One or more medicines not found');
       }
 
-      // Delete existing prescription medicines and create new ones
-      await this.prisma.prescriptionMedicine.deleteMany({
-        where: { prescriptionId: id },
+      updatedMedicines = data.medicines.map(m => {
+        const medInfo = medicines.find(med => med.id === m.medicineId);
+        return {
+          ...m,
+          name: medInfo?.name,
+        };
       });
     }
+
+    // Merge existing content with new content
+    const existingContent = prescription.content as any || {};
+    const newContent = {
+      ...existingContent,
+      diagnosis: data.diagnosis !== undefined ? data.diagnosis : existingContent.diagnosis,
+      symptoms: data.symptoms !== undefined ? data.symptoms : existingContent.symptoms,
+      instructions: data.instructions !== undefined ? data.instructions : existingContent.instructions,
+      followUpDate: data.followUpDate !== undefined ? data.followUpDate : existingContent.followUpDate,
+      medicines: updatedMedicines !== undefined ? updatedMedicines : existingContent.medicines,
+    };
 
     const updatedPrescription = await this.prisma.prescription.update({
       where: { id },
       data: {
-        diagnosis: data.diagnosis,
-        symptoms: data.symptoms,
-        instructions: data.instructions,
-        followUpDate: data.followUpDate,
-        notes: data.notes,
-        ...(data.medicines && {
-          prescriptionMedicines: {
-            create: data.medicines.map(med => ({
-              medicineId: med.medicineId,
-              dosage: med.dosage,
-              frequency: med.frequency,
-              duration: med.duration,
-              instructions: med.instructions,
-            })),
-          },
-        }),
+        notes: data.notes !== undefined ? data.notes : prescription.notes,
+        content: newContent,
       },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -332,9 +319,6 @@ export class PrescriptionsService {
       where: { id },
       data: { pdfUrl },
       include: {
-        prescriptionMedicines: {
-          include: { medicine: true },
-        },
         appointment: {
           include: {
             doctor: { include: { user: true } },
@@ -359,11 +343,6 @@ export class PrescriptionsService {
         'You can only delete your own prescriptions'
       );
     }
-
-    // Delete prescription medicines first (cascade should handle this, but being explicit)
-    await this.prisma.prescriptionMedicine.deleteMany({
-      where: { prescriptionId: id },
-    });
 
     await this.prisma.prescription.delete({
       where: { id },

@@ -45,10 +45,6 @@ export class AppointmentsService {
       throw new NotFoundException('Doctor not found');
     }
 
-    if (!doctor.isAvailable) {
-      throw new BadRequestException('Doctor is not available for appointments');
-    }
-
     // Check if patient exists
     const patient = await this.prisma.patient.findUnique({
       where: { id: data.patientId },
@@ -76,9 +72,9 @@ export class AppointmentsService {
         doctorId: data.doctorId,
         patientId: data.patientId,
         scheduledAt: new Date(data.scheduledAt),
-        type: data.type,
-        status: 'PENDING',
+        status: 'REQUESTED',
         notes: data.notes,
+        videoRoomId: `room_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       },
       include: {
         doctor: {
@@ -103,7 +99,7 @@ export class AppointmentsService {
         patient: {
           include: { user: true },
         },
-        prescription: true,
+        prescriptions: true,
       },
     });
 
@@ -193,7 +189,10 @@ export class AppointmentsService {
   }
 
   async confirmAppointment(id: string) {
-    return this.updateAppointment(id, { status: 'CONFIRMED' });
+    return this.prisma.appointment.update({
+      where: { id },
+      data: { status: 'CONFIRMED' },
+    });
   }
 
   async cancelAppointment(id: string, reason?: string) {
@@ -228,7 +227,7 @@ export class AppointmentsService {
           lte: endOfDay,
         },
         status: {
-          in: ['PENDING', 'CONFIRMED'],
+          in: ['REQUESTED', 'CONFIRMED'],
         },
       },
       select: {
@@ -272,7 +271,7 @@ export class AppointmentsService {
       where: {
         scheduledAt: { gte: now },
         status: {
-          in: ['PENDING', 'CONFIRMED'],
+          in: ['REQUESTED', 'CONFIRMED'],
         },
       },
       include: {
@@ -295,7 +294,7 @@ export class AppointmentsService {
       [
         this.prisma.appointment.count({ where }),
         this.prisma.appointment.count({
-          where: { ...where, status: 'PENDING' },
+          where: { ...where, status: 'REQUESTED' },
         }),
         this.prisma.appointment.count({
           where: { ...where, status: 'CONFIRMED' },
@@ -335,7 +334,7 @@ export class AppointmentsService {
         lte: endTime,
       },
       status: {
-        in: ['PENDING', 'CONFIRMED'],
+        in: ['REQUESTED', 'CONFIRMED'],
       },
     };
 

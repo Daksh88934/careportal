@@ -7,31 +7,39 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateMedicineDto {
   name: string;
-  genericName: string;
+  sku?: string;
   manufacturer: string;
   category: string;
   description?: string;
   sideEffects?: string;
-  contraindications?: string;
+  composition?: string;
   dosageForm: string;
-  strength: string;
-  price: number;
-  isAvailable: boolean;
-  requiresPrescription: boolean;
+  strength?: string;
+  unitPrice: number;
+  price?: number;
+  stock?: number;
+  packSize?: string;
+  isActive?: boolean;
+  isAvailable?: boolean;
+  requiresPrescription?: boolean;
   imageUrl?: string;
 }
 
 export interface UpdateMedicineDto {
   name?: string;
-  genericName?: string;
+  sku?: string;
   manufacturer?: string;
   category?: string;
   description?: string;
   sideEffects?: string;
-  contraindications?: string;
+  composition?: string;
   dosageForm?: string;
   strength?: string;
+  unitPrice?: number;
   price?: number;
+  stock?: number;
+  packSize?: string;
+  isActive?: boolean;
   isAvailable?: boolean;
   requiresPrescription?: boolean;
   imageUrl?: string;
@@ -41,6 +49,7 @@ export interface MedicineSearchFilters {
   category?: string;
   manufacturer?: string;
   requiresPrescription?: boolean;
+  isActive?: boolean;
   isAvailable?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -51,7 +60,6 @@ export class MedicinesService {
   constructor(private prisma: PrismaService) {}
 
   async createMedicine(data: CreateMedicineDto) {
-    // Check if medicine with same name already exists
     const existingMedicine = await this.prisma.medicine.findFirst({
       where: {
         name: data.name,
@@ -65,8 +73,27 @@ export class MedicinesService {
       );
     }
 
+    const sku = data.sku || `MED-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
     return this.prisma.medicine.create({
-      data,
+      data: {
+        name: data.name,
+        sku,
+        manufacturer: data.manufacturer,
+        category: data.category,
+        description: data.description,
+        sideEffects: data.sideEffects,
+        composition: data.composition,
+        dosageForm: data.dosageForm || 'tablet',
+        strength: data.strength,
+        unitPrice: data.unitPrice || data.price || 0,
+        gstPercent: 5.0,
+        stock: data.stock !== undefined ? data.stock : 100,
+        packSize: data.packSize || '10 tablets',
+        isActive: data.isActive !== undefined ? data.isActive : (data.isAvailable !== undefined ? data.isAvailable : true),
+        requiresPrescription: data.requiresPrescription !== undefined ? data.requiresPrescription : true,
+        imageUrl: data.imageUrl,
+      },
     });
   }
 
@@ -89,20 +116,17 @@ export class MedicinesService {
     filters?: MedicineSearchFilters
   ) {
     const skip = (page - 1) * limit;
-
     const where: any = {};
 
-    // Search functionality
     if (search) {
       where.OR = [
         { name: { contains: search, mode: 'insensitive' } },
-        { genericName: { contains: search, mode: 'insensitive' } },
         { manufacturer: { contains: search, mode: 'insensitive' } },
         { category: { contains: search, mode: 'insensitive' } },
+        { composition: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    // Apply filters
     if (filters) {
       if (filters.category) {
         where.category = { contains: filters.category, mode: 'insensitive' };
@@ -116,16 +140,16 @@ export class MedicinesService {
       if (filters.requiresPrescription !== undefined) {
         where.requiresPrescription = filters.requiresPrescription;
       }
-      if (filters.isAvailable !== undefined) {
-        where.isAvailable = filters.isAvailable;
+      if (filters.isActive !== undefined || filters.isAvailable !== undefined) {
+        where.isActive = filters.isActive !== undefined ? filters.isActive : filters.isAvailable;
       }
       if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
-        where.price = {};
+        where.unitPrice = {};
         if (filters.minPrice !== undefined) {
-          where.price.gte = filters.minPrice;
+          where.unitPrice.gte = filters.minPrice;
         }
         if (filters.maxPrice !== undefined) {
-          where.price.lte = filters.maxPrice;
+          where.unitPrice.lte = filters.maxPrice;
         }
       }
     }
@@ -160,7 +184,6 @@ export class MedicinesService {
       throw new NotFoundException('Medicine not found');
     }
 
-    // Check for duplicate if name or manufacturer is being updated
     if (data.name || data.manufacturer) {
       const existingMedicine = await this.prisma.medicine.findFirst({
         where: {
@@ -177,9 +200,32 @@ export class MedicinesService {
       }
     }
 
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.sku !== undefined) updateData.sku = data.sku;
+    if (data.manufacturer !== undefined) updateData.manufacturer = data.manufacturer;
+    if (data.category !== undefined) updateData.category = data.category;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.sideEffects !== undefined) updateData.sideEffects = data.sideEffects;
+    if (data.composition !== undefined) updateData.composition = data.composition;
+    if (data.dosageForm !== undefined) updateData.dosageForm = data.dosageForm;
+    if (data.strength !== undefined) updateData.strength = data.strength;
+    if (data.unitPrice !== undefined || data.price !== undefined) {
+      updateData.unitPrice = data.unitPrice !== undefined ? data.unitPrice : data.price;
+    }
+    if (data.stock !== undefined) updateData.stock = data.stock;
+    if (data.packSize !== undefined) updateData.packSize = data.packSize;
+    if (data.isActive !== undefined || data.isAvailable !== undefined) {
+      updateData.isActive = data.isActive !== undefined ? data.isActive : data.isAvailable;
+    }
+    if (data.requiresPrescription !== undefined) {
+      updateData.requiresPrescription = data.requiresPrescription;
+    }
+    if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
+
     return this.prisma.medicine.update({
       where: { id },
-      data,
+      data: updateData,
     });
   }
 
@@ -192,15 +238,16 @@ export class MedicinesService {
       throw new NotFoundException('Medicine not found');
     }
 
-    // Check if medicine is used in any prescriptions
-    const prescriptionCount = await this.prisma.prescriptionMedicine.count({
+    const orderItemCount = await this.prisma.orderItem.count({
       where: { medicineId: id },
     });
 
-    if (prescriptionCount > 0) {
-      throw new BadRequestException(
-        'Cannot delete medicine that is used in prescriptions'
-      );
+    if (orderItemCount > 0) {
+      // Soft-delete if ordered previously
+      return this.prisma.medicine.update({
+        where: { id },
+        data: { isActive: false },
+      });
     }
 
     await this.prisma.medicine.delete({
@@ -214,7 +261,7 @@ export class MedicinesService {
     return this.prisma.medicine.findMany({
       where: {
         category: { contains: category, mode: 'insensitive' },
-        isAvailable: true,
+        isActive: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -224,123 +271,85 @@ export class MedicinesService {
     return this.prisma.medicine.findMany({
       where: {
         manufacturer: { contains: manufacturer, mode: 'insensitive' },
-        isAvailable: true,
+        isActive: true,
       },
       orderBy: { name: 'asc' },
     });
   }
 
   async getPopularMedicines(limit = 10) {
-    // Get medicines that are most frequently prescribed
-    const popularMedicines = await this.prisma.prescriptionMedicine.groupBy({
+    const popularOrderItems = await this.prisma.orderItem.groupBy({
       by: ['medicineId'],
-      _count: {
-        medicineId: true,
+      _sum: {
+        quantity: true,
       },
       orderBy: {
-        _count: {
-          medicineId: 'desc',
+        _sum: {
+          quantity: 'desc',
         },
       },
       take: limit,
     });
 
-    const medicineIds = popularMedicines.map(pm => pm.medicineId);
+    const medicineIds = popularOrderItems.map(item => item.medicineId);
 
     const medicines = await this.prisma.medicine.findMany({
       where: {
         id: { in: medicineIds },
-        isAvailable: true,
+        isActive: true,
       },
     });
 
-    // Sort medicines by prescription count
-    const sortedMedicines = medicines.sort((a, b) => {
-      const aCount =
-        popularMedicines.find(pm => pm.medicineId === a.id)?._count
-          .medicineId || 0;
-      const bCount =
-        popularMedicines.find(pm => pm.medicineId === b.id)?._count
-          .medicineId || 0;
-      return bCount - aCount;
-    });
+    if (medicines.length === 0) {
+      return this.prisma.medicine.findMany({
+        where: { isActive: true },
+        take: limit,
+        orderBy: { name: 'asc' },
+      });
+    }
 
-    return sortedMedicines.map(medicine => ({
-      ...medicine,
-      prescriptionCount:
-        popularMedicines.find(pm => pm.medicineId === medicine.id)?._count
-          .medicineId || 0,
-    }));
+    return medicines;
   }
 
   async getMedicineCategories() {
-    const categories = await this.prisma.medicine.groupBy({
-      by: ['category'],
-      _count: {
-        category: true,
-      },
-      where: {
-        isAvailable: true,
-      },
-      orderBy: {
-        category: 'asc',
-      },
+    const medicines = await this.prisma.medicine.findMany({
+      where: { isActive: true },
+      select: { category: true },
+      distinct: ['category'],
     });
 
-    return categories.map(cat => ({
-      category: cat.category,
-      count: cat._count.category,
+    return medicines.map(m => ({
+      category: m.category,
     }));
   }
 
   async getMedicineManufacturers() {
-    const manufacturers = await this.prisma.medicine.groupBy({
-      by: ['manufacturer'],
-      _count: {
-        manufacturer: true,
-      },
-      where: {
-        isAvailable: true,
-      },
-      orderBy: {
-        manufacturer: 'asc',
-      },
+    const medicines = await this.prisma.medicine.findMany({
+      where: { isActive: true },
+      select: { manufacturer: true },
+      distinct: ['manufacturer'],
     });
 
-    return manufacturers.map(man => ({
-      manufacturer: man.manufacturer,
-      count: man._count.manufacturer,
+    return medicines.map(m => ({
+      manufacturer: m.manufacturer,
     }));
   }
 
   async getMedicineStats() {
-    const [total, available, prescriptionRequired, categories, manufacturers] =
-      await Promise.all([
-        this.prisma.medicine.count(),
-        this.prisma.medicine.count({ where: { isAvailable: true } }),
-        this.prisma.medicine.count({ where: { requiresPrescription: true } }),
-        this.prisma.medicine.groupBy({
-          by: ['category'],
-          _count: { category: true },
-        }),
-        this.prisma.medicine.groupBy({
-          by: ['manufacturer'],
-          _count: { manufacturer: true },
-        }),
-      ]);
+    const [total, available, prescriptionRequired] = await Promise.all([
+      this.prisma.medicine.count(),
+      this.prisma.medicine.count({ where: { isActive: true } }),
+      this.prisma.medicine.count({ where: { requiresPrescription: true } }),
+    ]);
 
     return {
       total,
       available,
       prescriptionRequired,
-      categoriesCount: categories.length,
-      manufacturersCount: manufacturers.length,
     };
   }
 
   async searchMedicinesBySymptoms(symptoms: string[]) {
-    // This is a simplified implementation
-    // In a real system, you'd have a more sophisticated mapping between symptoms and medicines
     const searchTerms = symptoms.join(' ');
 
     return this.prisma.medicine.findMany({
@@ -348,8 +357,9 @@ export class MedicinesService {
         OR: [
           { description: { contains: searchTerms, mode: 'insensitive' } },
           { category: { contains: searchTerms, mode: 'insensitive' } },
+          { composition: { contains: searchTerms, mode: 'insensitive' } },
         ],
-        isAvailable: true,
+        isActive: true,
       },
       take: 20,
       orderBy: { name: 'asc' },
@@ -357,8 +367,6 @@ export class MedicinesService {
   }
 
   async getMedicineInteractions(medicineId: string) {
-    // This would typically involve a drug interaction database
-    // For now, return a placeholder response
     const medicine = await this.getMedicineById(medicineId);
 
     return {
@@ -374,14 +382,14 @@ export class MedicinesService {
 
   async bulkCreateMedicines(medicines: CreateMedicineDto[]) {
     const results = [];
-    const errors = [];
+    const errorsList = [];
 
     for (const medicineData of medicines) {
       try {
         const medicine = await this.createMedicine(medicineData);
         results.push(medicine);
       } catch (error) {
-        errors.push({
+        errorsList.push({
           medicine: medicineData.name,
           error: error.message,
         });
@@ -390,26 +398,26 @@ export class MedicinesService {
 
     return {
       created: results.length,
-      errors: errors.length,
+      errorsCount: errorsList.length,
       results,
-      errors,
+      errors: errorsList,
     };
   }
 
   async updateMedicineAvailability(id: string, isAvailable: boolean) {
-    return this.updateMedicine(id, { isAvailable });
+    return this.updateMedicine(id, { isActive: isAvailable });
   }
 
   async getMedicinesByPriceRange(minPrice: number, maxPrice: number) {
     return this.prisma.medicine.findMany({
       where: {
-        price: {
+        unitPrice: {
           gte: minPrice,
           lte: maxPrice,
         },
-        isAvailable: true,
+        isActive: true,
       },
-      orderBy: { price: 'asc' },
+      orderBy: { unitPrice: 'asc' },
     });
   }
 }

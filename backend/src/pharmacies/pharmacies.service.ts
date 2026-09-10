@@ -77,7 +77,17 @@ export class PharmaciesService {
     return this.prisma.pharmacy.create({
       data: {
         userId,
-        ...data,
+        name: data.name,
+        address: data.address,
+        city: data.city,
+        state: data.state,
+        licenseNumber: data.licenseNumber,
+        contact: data.phone || data.email || '',
+        deliveryRadius: data.deliveryRadius || 10,
+        operatingHours:
+          (typeof data.operatingHours === 'string'
+            ? { hours: data.operatingHours }
+            : data.operatingHours) || {},
         isActive: false, // Requires admin approval
         isVerified: false,
       },
@@ -166,17 +176,11 @@ export class PharmaciesService {
       if (filters.state) {
         where.state = { contains: filters.state, mode: 'insensitive' };
       }
-      if (filters.pincode) {
-        where.pincode = filters.pincode;
-      }
       if (filters.isActive !== undefined) {
         where.isActive = filters.isActive;
       }
       if (filters.hasDelivery) {
         where.deliveryRadius = { gt: 0 };
-      }
-      if (filters.maxDeliveryFee !== undefined) {
-        where.deliveryFee = { lte: filters.maxDeliveryFee };
       }
     }
 
@@ -238,9 +242,26 @@ export class PharmaciesService {
       throw new ForbiddenException('Access denied');
     }
 
+    const updateData: any = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.address !== undefined) updateData.address = data.address;
+    if (data.city !== undefined) updateData.city = data.city;
+    if (data.state !== undefined) updateData.state = data.state;
+    if (data.phone !== undefined || data.email !== undefined)
+      updateData.contact = data.phone || data.email;
+    if (data.deliveryRadius !== undefined)
+      updateData.deliveryRadius = data.deliveryRadius;
+    if (data.operatingHours !== undefined) {
+      updateData.operatingHours =
+        typeof data.operatingHours === 'string'
+          ? { hours: data.operatingHours }
+          : data.operatingHours;
+    }
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+
     return this.prisma.pharmacy.update({
       where: { id },
-      data,
+      data: updateData,
       include: {
         user: {
           select: {
@@ -469,7 +490,6 @@ export class PharmaciesService {
       isActive: true,
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
-        { description: { contains: query, mode: 'insensitive' } },
         { address: { contains: query, mode: 'insensitive' } },
         { city: { contains: query, mode: 'insensitive' } },
       ],
@@ -482,14 +502,8 @@ export class PharmaciesService {
       if (filters.state) {
         where.state = { contains: filters.state, mode: 'insensitive' };
       }
-      if (filters.pincode) {
-        where.pincode = filters.pincode;
-      }
       if (filters.hasDelivery) {
         where.deliveryRadius = { gt: 0 };
-      }
-      if (filters.maxDeliveryFee !== undefined) {
-        where.deliveryFee = { lte: filters.maxDeliveryFee };
       }
     }
 
@@ -534,11 +548,7 @@ export class PharmaciesService {
           },
         },
       },
-      orderBy: {
-        orders: {
-          _count: 'desc',
-        },
-      },
+      orderBy: [{ rating: 'desc' }, { totalRatings: 'desc' }],
       take: limit,
     });
   }

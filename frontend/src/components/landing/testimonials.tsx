@@ -1,4 +1,7 @@
-import { Star } from 'lucide-react';
+'use client';
+
+import Image from 'next/image';
+import { Star, Quote, CheckCircle2 } from 'lucide-react';
 
 const testimonials = [
   {
@@ -6,72 +9,89 @@ const testimonials = [
     role: 'Patient',
     location: 'Mumbai',
     content:
-      'Care Portal made it so easy to consult with a doctor during the pandemic. The video quality was excellent and the prescription was delivered to my doorstep.',
+      'Care Portal made it effortless to consult with a top cardiologist from home. The video quality was crisp, and the e-prescription was dispatched to my nearest pharmacy in under 30 minutes!',
     rating: 5,
-    avatar: '/avatars/priya.jpg',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
+    verified: true,
   },
   {
     name: 'Dr. Rajesh Kumar',
-    role: 'General Physician',
-    location: 'Delhi',
+    role: 'General Physician & Diabetologist',
+    location: 'Delhi NCR',
     content:
-      'As a doctor, I love how Care Portal streamlines patient consultations. The platform is intuitive and helps me manage my practice efficiently.',
+      'As a doctor managing hundreds of patients, Care Portal has streamlined my entire practice. The smart scheduling, digital prescription pad, and secure video calls are world-class.',
     rating: 5,
-    avatar: '/avatars/rajesh.jpg',
+    avatar: 'https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&q=80&w=200',
+    verified: true,
   },
   {
     name: 'Amit Patel',
     role: 'Patient',
-    location: 'Bangalore',
+    location: 'Bengaluru',
     content:
-      'The AI health assistant helped me understand my symptoms before consulting with a doctor. Very helpful and saved me time.',
+      'The AI health assistant helped triage my symptoms before connecting me with an orthopedic specialist. Saved me hours in commute and waiting rooms. Outstanding service!',
     rating: 5,
-    avatar: '/avatars/amit.jpg',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
+    verified: true,
   },
 ];
 
 export function Testimonials() {
   return (
-    <section className='py-24 sm:py-32'>
+    <section className='py-24 sm:py-32 bg-white relative overflow-hidden'>
       <div className='mx-auto max-w-7xl px-6 lg:px-8'>
-        <div className='mx-auto max-w-xl text-center'>
-          <h2 className='text-lg font-semibold leading-8 tracking-tight text-blue-600'>
-            Testimonials
+        <div className='mx-auto max-w-2xl text-center'>
+          <div className='inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-3'>
+            Patient & Doctor Stories
+          </div>
+          <h2 className='text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl'>
+            Trusted by Thousands Across India
           </h2>
-          <p className='mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl'>
-            What our users say
+          <p className='mt-3 text-base text-gray-600'>
+            See why doctors and patients choose Care Portal for trusted remote healthcare.
           </p>
         </div>
+
         <div className='mx-auto mt-16 flow-root max-w-2xl sm:mt-20 lg:mx-0 lg:max-w-none'>
           <div className='grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3'>
             {testimonials.map(testimonial => (
               <div
                 key={testimonial.name}
-                className='rounded-2xl bg-gray-50 p-8 text-sm leading-6'
+                className='rounded-3xl bg-slate-50/80 p-8 text-sm leading-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between relative'
               >
-                <div className='flex gap-x-1 text-yellow-400'>
-                  {[...Array(testimonial.rating)].map((_, i) => (
-                    <Star key={i} className='h-5 w-5 fill-current' />
-                  ))}
+                <div>
+                  <div className='flex items-center justify-between'>
+                    <div className='flex gap-x-1 text-amber-400'>
+                      {[...Array(testimonial.rating)].map((_, i) => (
+                        <Star key={i} className='h-4 w-4 fill-current' />
+                      ))}
+                    </div>
+                    <Quote className='h-6 w-6 text-blue-200' />
+                  </div>
+
+                  <blockquote className='mt-5 text-gray-800 text-base leading-relaxed'>
+                    "{testimonial.content}"
+                  </blockquote>
                 </div>
-                <blockquote className='mt-6 text-gray-900'>
-                  <p>"{testimonial.content}"</p>
-                </blockquote>
-                <figcaption className='mt-6 flex items-center gap-x-4'>
-                  <div className='h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center'>
-                    <span className='text-sm font-semibold text-gray-700'>
-                      {testimonial.name
-                        .split(' ')
-                        .map(n => n[0])
-                        .join('')}
-                    </span>
+
+                <figcaption className='mt-6 pt-5 border-t border-slate-200/60 flex items-center gap-x-3.5'>
+                  <div className='relative w-12 h-12 rounded-full overflow-hidden bg-slate-200 shrink-0 border border-white shadow-sm'>
+                    <Image
+                      src={testimonial.avatar}
+                      alt={testimonial.name}
+                      fill
+                      className='object-cover'
+                    />
                   </div>
                   <div>
-                    <div className='font-semibold text-gray-900'>
+                    <div className='font-bold text-gray-900 flex items-center gap-1'>
                       {testimonial.name}
+                      {testimonial.verified && (
+                        <CheckCircle2 className='h-3.5 w-3.5 text-blue-600' />
+                      )}
                     </div>
-                    <div className='text-gray-600'>
-                      {testimonial.role}, {testimonial.location}
+                    <div className='text-xs text-gray-500'>
+                      {testimonial.role} • {testimonial.location}
                     </div>
                   </div>
                 </figcaption>

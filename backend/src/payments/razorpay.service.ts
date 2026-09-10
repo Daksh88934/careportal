@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as Razorpay from 'razorpay';
+const Razorpay = require('razorpay');
 import * as crypto from 'crypto';
 
 export interface RazorpayOrderData {
@@ -22,7 +22,7 @@ export interface RazorpayPaymentVerification {
 
 @Injectable()
 export class RazorpayService {
-  private razorpay: Razorpay;
+  private razorpay: any;
 
   constructor(private configService: ConfigService) {
     const keyId = this.configService.get<string>('RAZORPAY_KEY_ID');

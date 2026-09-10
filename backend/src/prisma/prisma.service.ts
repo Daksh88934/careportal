@@ -27,7 +27,7 @@ export class PrismaService
   }
 
   async enableShutdownHooks(app: any) {
-    this.$on('beforeExit', async () => {
+    (this as any).$on('beforeExit', async () => {
       await app.close();
     });
   }

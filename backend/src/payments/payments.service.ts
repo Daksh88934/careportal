@@ -9,13 +9,13 @@ import { RazorpayService } from './razorpay.service';
 import { StripeService } from './stripe.service';
 import { OrdersService } from '../orders/orders.service';
 import { AppointmentsService } from '../appointments/appointments.service';
-import { PaymentStatus, PaymentMethod } from '@prisma/client';
+import { PaymentStatus } from '@prisma/client';
 
 export interface CreatePaymentDto {
   orderId?: string;
   appointmentId?: string;
   amount: number;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   currency?: string;
   description?: string;
   metadata?: Record<string, any>;
@@ -23,7 +23,7 @@ export interface CreatePaymentDto {
 
 export interface ProcessPaymentDto {
   paymentId: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   gatewayPaymentId: string;
   gatewayOrderId?: string;
   gatewaySignature?: string;
@@ -67,7 +67,6 @@ export class PaymentsService {
 
     let order = null;
     let appointment = null;
-    let patientId = null;
 
     // Validate order or appointment
     if (data.orderId) {
@@ -76,7 +75,6 @@ export class PaymentsService {
         userId,
         userRole
       );
-      patientId = order.patientId;
 
       // Check if order already has a successful payment
       const existingPayment = await this.prisma.payment.findFirst({
@@ -93,11 +91,8 @@ export class PaymentsService {
 
     if (data.appointmentId) {
       appointment = await this.appointmentsService.getAppointmentById(
-        data.appointmentId,
-        userId,
-        userRole
+        data.appointmentId
       );
-      patientId = appointment.patientId;
 
       // Check if appointment already has a successful payment
       const existingPayment = await this.prisma.payment.findFirst({
@@ -114,19 +109,21 @@ export class PaymentsService {
       }
     }
 
-    // Create payment record
+    const providerName = (data.paymentMethod || 'razorpay').toLowerCase();
+    const currency = data.currency || (providerName === 'razorpay' ? 'INR' : 'USD');
+
+    // Create initial pending payment record
     const payment = await this.prisma.payment.create({
       data: {
         orderId: data.orderId,
         appointmentId: data.appointmentId,
-        patientId,
+        providerTransactionId: `pending_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        provider: providerName,
         amount: data.amount,
-        currency:
-          data.currency || (data.paymentMethod === 'RAZORPAY' ? 'INR' : 'USD'),
+        currency,
         paymentMethod: data.paymentMethod,
         status: 'PENDING',
-        description: data.description,
-        metadata: data.metadata || {},
+        gatewayResponse: data.metadata || {},
       },
       include: {
         order: {
@@ -145,10 +142,10 @@ export class PaymentsService {
     });
 
     // Create gateway order/payment intent
-    let gatewayResponse = null;
+    let gatewayResponse: any = null;
 
     try {
-      if (data.paymentMethod === 'RAZORPAY') {
+      if (providerName === 'razorpay') {
         gatewayResponse = await this.razorpayService.createOrder({
           amount: this.razorpayService.rupeesToPaise(data.amount),
           currency: payment.currency,
@@ -160,11 +157,11 @@ export class PaymentsService {
             ...data.metadata,
           },
         });
-      } else if (data.paymentMethod === 'STRIPE') {
+      } else if (providerName === 'stripe') {
         const customerEmail =
           payment.order?.patient?.user?.email ||
           payment.appointment?.patient?.user?.email;
-        const customerName = `${payment.order?.patient?.user?.firstName || payment.appointment?.patient?.user?.firstName} ${payment.order?.patient?.user?.lastName || payment.appointment?.patient?.user?.lastName}`;
+        const customerName = `${payment.order?.patient?.user?.firstName || payment.appointment?.patient?.user?.firstName || ''} ${payment.order?.patient?.user?.lastName || payment.appointment?.patient?.user?.lastName || ''}`.trim();
 
         gatewayResponse = await this.stripeService.createPaymentIntent({
           amount: this.stripeService.dollarsToCents(data.amount),
@@ -181,12 +178,12 @@ export class PaymentsService {
         });
       }
 
-      // Update payment with gateway details
+      // Update payment with gateway transaction ID
       const updatedPayment = await this.prisma.payment.update({
         where: { id: payment.id },
         data: {
-          gatewayOrderId: gatewayResponse.id,
-          gatewayData: gatewayResponse,
+          providerTransactionId: gatewayResponse?.id || payment.providerTransactionId,
+          gatewayResponse: gatewayResponse || {},
         },
         include: {
           order: {
@@ -263,10 +260,11 @@ export class PaymentsService {
     }
 
     let isVerified = false;
+    const providerName = (data.paymentMethod || payment.provider || 'razorpay').toLowerCase();
 
     try {
       // Verify payment with gateway
-      if (data.paymentMethod === 'RAZORPAY') {
+      if (providerName === 'razorpay') {
         if (!data.gatewayOrderId || !data.gatewaySignature) {
           throw new BadRequestException(
             'Razorpay order ID and signature are required'
@@ -278,7 +276,7 @@ export class PaymentsService {
           razorpay_payment_id: data.gatewayPaymentId,
           razorpay_signature: data.gatewaySignature,
         });
-      } else if (data.paymentMethod === 'STRIPE') {
+      } else if (providerName === 'stripe') {
         const paymentIntent = await this.stripeService.getPaymentIntent(
           data.gatewayPaymentId
         );
@@ -294,9 +292,8 @@ export class PaymentsService {
         where: { id: data.paymentId },
         data: {
           status: 'COMPLETED',
-          gatewayPaymentId: data.gatewayPaymentId,
-          gatewayData: data.gatewayData || {},
-          paidAt: new Date(),
+          providerTransactionId: data.gatewayPaymentId,
+          gatewayResponse: data.gatewayData || (payment.gatewayResponse as any) || {},
         },
         include: {
           order: true,
@@ -316,9 +313,7 @@ export class PaymentsService {
       // Update appointment status if it's an appointment payment
       if (updatedPayment.appointmentId) {
         await this.appointmentsService.confirmAppointment(
-          updatedPayment.appointmentId,
-          userId,
-          userRole
+          updatedPayment.appointmentId
         );
       }
 
@@ -353,7 +348,6 @@ export class PaymentsService {
             doctor: { include: { user: true } },
           },
         },
-        refunds: true,
       },
     });
 
@@ -390,7 +384,10 @@ export class PaymentsService {
         where: { userId },
       });
       if (patient) {
-        where.patientId = patient.id;
+        where.OR = [
+          { order: { patientId: patient.id } },
+          { appointment: { patientId: patient.id } },
+        ];
       }
     } else if (userRole === 'PHARMACY') {
       const pharmacy = await this.prisma.pharmacy.findFirst({
@@ -422,7 +419,6 @@ export class PaymentsService {
               doctor: { include: { user: true } },
             },
           },
-          refunds: true,
         },
         skip,
         take: limit,
@@ -462,7 +458,6 @@ export class PaymentsService {
             doctor: { include: { user: true } },
           },
         },
-        refunds: true,
       },
     });
 
@@ -483,62 +478,50 @@ export class PaymentsService {
       throw new ForbiddenException('Access denied to refund this payment');
     }
 
-    // Calculate refund amount
-    const totalRefunded = payment.refunds.reduce(
-      (sum, refund) => sum + refund.amount,
-      0
-    );
-    const refundAmount = data.amount || payment.amount - totalRefunded;
+    const numericAmount = Number(payment.amount);
+    const existingRefund = Number(payment.refundAmount || 0);
+    const refundAmount = data.amount || (numericAmount - existingRefund);
 
     if (refundAmount <= 0) {
       throw new BadRequestException('Invalid refund amount');
     }
 
-    if (totalRefunded + refundAmount > payment.amount) {
+    if (existingRefund + refundAmount > numericAmount) {
       throw new BadRequestException('Refund amount exceeds payment amount');
     }
 
     try {
-      let gatewayRefund = null;
+      let gatewayRefund: any = null;
+      const providerName = (payment.provider || 'razorpay').toLowerCase();
 
       // Process refund with gateway
-      if (payment.paymentMethod === 'RAZORPAY') {
+      if (providerName === 'razorpay') {
         gatewayRefund = await this.razorpayService.refundPayment(
-          payment.gatewayPaymentId,
+          payment.providerTransactionId,
           this.razorpayService.rupeesToPaise(refundAmount),
           data.metadata
         );
-      } else if (payment.paymentMethod === 'STRIPE') {
+      } else if (providerName === 'stripe') {
         gatewayRefund = await this.stripeService.createRefund(
-          payment.gatewayPaymentId,
+          payment.providerTransactionId,
           this.stripeService.dollarsToCents(refundAmount),
           data.reason,
           data.metadata
         );
       }
 
-      // Create refund record
-      const refund = await this.prisma.refund.create({
+      // Update payment record with refund information
+      const updatedPayment = await this.prisma.payment.update({
+        where: { id: payment.id },
         data: {
-          paymentId: payment.id,
-          amount: refundAmount,
-          reason: data.reason,
-          status: 'COMPLETED',
-          gatewayRefundId: gatewayRefund.id,
-          gatewayData: gatewayRefund,
-          metadata: data.metadata || {},
+          status: 'REFUNDED',
+          refundAmount: existingRefund + refundAmount,
+          refundedAt: new Date(),
+          gatewayResponse: gatewayRefund || (payment.gatewayResponse as any) || {},
         },
       });
 
-      // Update payment status if fully refunded
-      if (totalRefunded + refundAmount >= payment.amount) {
-        await this.prisma.payment.update({
-          where: { id: payment.id },
-          data: { status: 'REFUNDED' },
-        });
-      }
-
-      return refund;
+      return updatedPayment;
     } catch (error) {
       throw new BadRequestException(
         `Refund processing failed: ${error.message}`
@@ -576,10 +559,13 @@ export class PaymentsService {
       _sum: { amount: true },
     });
 
-    const totalRefunds = await this.prisma.refund.aggregate({
-      where: { payment: where },
-      _sum: { amount: true },
+    const totalRefunds = await this.prisma.payment.aggregate({
+      where: { ...where, status: 'REFUNDED' },
+      _sum: { refundAmount: true },
     });
+
+    const rev = Number(totalRevenue._sum.amount || 0);
+    const ref = Number(totalRefunds._sum.refundAmount || 0);
 
     return {
       total,
@@ -587,10 +573,9 @@ export class PaymentsService {
       pending,
       failed,
       refunded,
-      totalRevenue: totalRevenue._sum.amount || 0,
-      totalRefunds: totalRefunds._sum.amount || 0,
-      netRevenue:
-        (totalRevenue._sum.amount || 0) - (totalRefunds._sum.amount || 0),
+      totalRevenue: rev,
+      totalRefunds: ref,
+      netRevenue: rev - ref,
     };
   }
 
@@ -658,7 +643,7 @@ export class PaymentsService {
 
   private async handleRazorpayPaymentCaptured(paymentData: any) {
     const payment = await this.prisma.payment.findFirst({
-      where: { gatewayOrderId: paymentData.order_id },
+      where: { providerTransactionId: paymentData.order_id },
     });
 
     if (payment && payment.status === 'PENDING') {
@@ -666,8 +651,7 @@ export class PaymentsService {
         where: { id: payment.id },
         data: {
           status: 'COMPLETED',
-          gatewayPaymentId: paymentData.id,
-          paidAt: new Date(),
+          providerTransactionId: paymentData.id,
         },
       });
     }
@@ -675,7 +659,7 @@ export class PaymentsService {
 
   private async handleRazorpayPaymentFailed(paymentData: any) {
     const payment = await this.prisma.payment.findFirst({
-      where: { gatewayOrderId: paymentData.order_id },
+      where: { providerTransactionId: paymentData.order_id },
     });
 
     if (payment && payment.status === 'PENDING') {
@@ -687,21 +671,21 @@ export class PaymentsService {
   }
 
   private async handleRazorpayRefundProcessed(refundData: any) {
-    const refund = await this.prisma.refund.findFirst({
-      where: { gatewayRefundId: refundData.id },
+    const payment = await this.prisma.payment.findFirst({
+      where: { providerTransactionId: refundData.payment_id },
     });
 
-    if (refund) {
-      await this.prisma.refund.update({
-        where: { id: refund.id },
-        data: { status: 'COMPLETED' },
+    if (payment) {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'REFUNDED', refundedAt: new Date() },
       });
     }
   }
 
   private async handleStripePaymentSucceeded(paymentIntentData: any) {
     const payment = await this.prisma.payment.findFirst({
-      where: { gatewayOrderId: paymentIntentData.id },
+      where: { providerTransactionId: paymentIntentData.id },
     });
 
     if (payment && payment.status === 'PENDING') {
@@ -709,8 +693,7 @@ export class PaymentsService {
         where: { id: payment.id },
         data: {
           status: 'COMPLETED',
-          gatewayPaymentId: paymentIntentData.id,
-          paidAt: new Date(),
+          providerTransactionId: paymentIntentData.id,
         },
       });
     }
@@ -718,7 +701,7 @@ export class PaymentsService {
 
   private async handleStripePaymentFailed(paymentIntentData: any) {
     const payment = await this.prisma.payment.findFirst({
-      where: { gatewayOrderId: paymentIntentData.id },
+      where: { providerTransactionId: paymentIntentData.id },
     });
 
     if (payment && payment.status === 'PENDING') {
@@ -730,7 +713,6 @@ export class PaymentsService {
   }
 
   private async handleStripeChargeDispute(disputeData: any) {
-    // Handle charge disputes - could create dispute records or notify admins
     console.log('Stripe charge dispute created:', disputeData);
   }
 }

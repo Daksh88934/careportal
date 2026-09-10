@@ -23,7 +23,6 @@ import {
   ProcessPaymentDto,
   RefundPaymentDto,
 } from './payments.service';
-import { PaymentMethod } from '@prisma/client';
 
 @Controller('payments')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -58,13 +57,20 @@ export class PaymentsController {
 
   @Get(':id')
   @Roles('PATIENT', 'DOCTOR', 'PHARMACY', 'ADMIN')
-  async getPaymentById(@Param('id', ParseUUIDPipe) id: string, @Request() req) {
-    return this.paymentsService.getPaymentById(id, req.user.id, req.user.role);
+  async getPaymentById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Request() req
+  ) {
+    return this.paymentsService.getPaymentById(
+      id,
+      req.user.id,
+      req.user.role
+    );
   }
 
   @Get()
   @Roles('PATIENT', 'DOCTOR', 'PHARMACY', 'ADMIN')
-  async getPaymentsByUser(
+  async getPayments(
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit = 20,
     @Request() req
@@ -93,34 +99,10 @@ export class PaymentsController {
   @Get('stats/overview')
   @Roles('DOCTOR', 'PHARMACY', 'ADMIN')
   async getPaymentStats(@Request() req) {
-    return this.paymentsService.getPaymentStats(req.user.id, req.user.role);
-  }
-
-  @Post('webhooks/razorpay')
-  async handleRazorpayWebhook(
-    @RawBody() body: Buffer,
-    @Headers('x-razorpay-signature') signature: string
-  ) {
-    if (!signature) {
-      throw new BadRequestException('Missing webhook signature');
-    }
-
-    const bodyString = body.toString();
-    const bodyJson = JSON.parse(bodyString);
-
-    return this.paymentsService.handleWebhook('razorpay', bodyJson, signature);
-  }
-
-  @Post('webhooks/stripe')
-  async handleStripeWebhook(
-    @RawBody() body: Buffer,
-    @Headers('stripe-signature') signature: string
-  ) {
-    if (!signature) {
-      throw new BadRequestException('Missing webhook signature');
-    }
-
-    return this.paymentsService.handleWebhook('stripe', body, signature);
+    return this.paymentsService.getPaymentStats(
+      req.user.role === 'ADMIN' ? undefined : req.user.id,
+      req.user.role
+    );
   }
 
   @Post('orders/:orderId/payment')
@@ -129,7 +111,7 @@ export class PaymentsController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body()
     body: {
-      paymentMethod: PaymentMethod;
+      paymentMethod: string;
       currency?: string;
       description?: string;
     },
@@ -144,7 +126,7 @@ export class PaymentsController {
 
     const createPaymentDto: CreatePaymentDto = {
       orderId,
-      amount: order.totalAmount,
+      amount: Number(order.totalAmount),
       paymentMethod: body.paymentMethod,
       currency: body.currency,
       description: body.description || `Payment for order ${orderId}`,
@@ -163,7 +145,7 @@ export class PaymentsController {
     @Param('appointmentId', ParseUUIDPipe) appointmentId: string,
     @Body()
     body: {
-      paymentMethod: PaymentMethod;
+      paymentMethod: string;
       amount: number;
       currency?: string;
       description?: string;
@@ -195,7 +177,6 @@ export class PaymentsController {
     return this.paymentsService['prisma'].payment.findMany({
       where: { orderId },
       include: {
-        refunds: true,
         order: {
           include: {
             patient: { include: { user: true } },
@@ -216,7 +197,6 @@ export class PaymentsController {
     return this.paymentsService['prisma'].payment.findMany({
       where: { appointmentId },
       include: {
-        refunds: true,
         appointment: {
           include: {
             patient: { include: { user: true } },
@@ -234,7 +214,7 @@ export class CreatePaymentRequestDto {
   orderId?: string;
   appointmentId?: string;
   amount: number;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   currency?: string;
   description?: string;
   metadata?: Record<string, any>;
@@ -242,7 +222,7 @@ export class CreatePaymentRequestDto {
 
 export class ProcessPaymentRequestDto {
   paymentId: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   gatewayPaymentId: string;
   gatewayOrderId?: string;
   gatewaySignature?: string;
@@ -257,13 +237,13 @@ export class RefundPaymentRequestDto {
 }
 
 export class CreateOrderPaymentDto {
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   currency?: string;
   description?: string;
 }
 
 export class CreateAppointmentPaymentDto {
-  paymentMethod: PaymentMethod;
+  paymentMethod: string;
   amount: number;
   currency?: string;
   description?: string;

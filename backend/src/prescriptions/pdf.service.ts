@@ -19,7 +19,7 @@ export class PdfService {
         });
 
         // Header with clinic/hospital info
-        this.addHeader(doc);
+        this.addHeader(doc, prescription);
 
         // Doctor and patient information
         this.addDoctorPatientInfo(doc, prescription);
@@ -43,7 +43,7 @@ export class PdfService {
     });
   }
 
-  private addHeader(doc: PDFKit.PDFDocument) {
+  private addHeader(doc: any, prescription: any) {
     // Clinic/Hospital Header
     doc
       .fontSize(20)
@@ -76,7 +76,7 @@ export class PdfService {
     doc.moveTo(50, 150).lineTo(550, 150).stroke('#CCCCCC');
   }
 
-  private addDoctorPatientInfo(doc: PDFKit.PDFDocument, prescription: any) {
+  private addDoctorPatientInfo(doc: any, prescription: any) {
     const startY = 170;
 
     // Doctor Information
@@ -146,8 +146,9 @@ export class PdfService {
       .stroke('#CCCCCC');
   }
 
-  private addPrescriptionDetails(doc: PDFKit.PDFDocument, prescription: any) {
+  private addPrescriptionDetails(doc: any, prescription: any) {
     const startY = 280;
+    const content = prescription.content || {};
 
     // Diagnosis
     doc
@@ -160,7 +161,7 @@ export class PdfService {
       .fontSize(11)
       .font('Helvetica')
       .fillColor('#333333')
-      .text(prescription.diagnosis, 50, startY + 20, { width: 500 });
+      .text(content.diagnosis || 'None', 50, startY + 20, { width: 500 });
 
     // Symptoms
     doc
@@ -173,11 +174,13 @@ export class PdfService {
       .fontSize(11)
       .font('Helvetica')
       .fillColor('#333333')
-      .text(prescription.symptoms, 50, startY + 80, { width: 500 });
+      .text(content.symptoms || 'None', 50, startY + 80, { width: 500 });
   }
 
-  private addMedicinesTable(doc: PDFKit.PDFDocument, prescription: any) {
+  private addMedicinesTable(doc: any, prescription: any) {
     const startY = 420;
+    const content = prescription.content || {};
+    const medicines = content.medicines || [];
 
     doc
       .fontSize(14)
@@ -215,7 +218,7 @@ export class PdfService {
     let currentY = tableTop + 25;
     doc.fillColor('#333333').font('Helvetica');
 
-    prescription.prescriptionMedicines.forEach(
+    medicines.forEach(
       (prescMed: any, index: number) => {
         const rowHeight = 25;
 
@@ -226,7 +229,7 @@ export class PdfService {
 
         currentX = 50;
         const rowData = [
-          prescMed.medicine.name,
+          prescMed.name || prescMed.medicineId,
           prescMed.dosage,
           prescMed.frequency,
           prescMed.duration,
@@ -261,8 +264,9 @@ export class PdfService {
     });
   }
 
-  private addInstructionsAndNotes(doc: PDFKit.PDFDocument, prescription: any) {
+  private addInstructionsAndNotes(doc: any, prescription: any) {
     const startY = 600;
+    const content = prescription.content || {};
 
     // General Instructions
     doc
@@ -275,16 +279,16 @@ export class PdfService {
       .fontSize(11)
       .font('Helvetica')
       .fillColor('#333333')
-      .text(prescription.instructions, 50, startY + 20, { width: 500 });
+      .text(content.instructions || 'None', 50, startY + 20, { width: 500 });
 
     // Follow-up date
-    if (prescription.followUpDate) {
+    if (content.followUpDate) {
       doc
         .fontSize(12)
         .font('Helvetica-Bold')
         .fillColor('#D4AF37')
         .text(
-          `Follow-up Date: ${new Date(prescription.followUpDate).toLocaleDateString()}`,
+          `Follow-up Date: ${new Date(content.followUpDate).toLocaleDateString()}`,
           50,
           startY + 60
         );
@@ -306,7 +310,7 @@ export class PdfService {
     }
   }
 
-  private addFooter(doc: PDFKit.PDFDocument, prescription: any) {
+  private addFooter(doc: any, prescription: any) {
     const pageHeight = doc.page.height;
     const footerY = pageHeight - 120;
 
@@ -434,11 +438,11 @@ export class PdfService {
               currentY + 15
             )
             .text(
-              `Patient: ${prescription.appointment.patient.user.name}`,
+              `Patient: ${prescription.appointment?.patient?.user?.name || 'Unknown'}`,
               70,
               currentY + 30
             )
-            .text(`Diagnosis: ${prescription.diagnosis}`, 70, currentY + 45);
+            .text(`Diagnosis: ${(prescription.content as any)?.diagnosis || 'None'}`, 70, currentY + 45);
 
           currentY += 70;
         });
